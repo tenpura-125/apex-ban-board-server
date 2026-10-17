@@ -1,10 +1,21 @@
 const WebSocket = require('ws');
+const http = require('http'); // 💡 Discordプロキシの暗号化通信を受け止めるために追加
 const PORT = process.env.PORT || 8080;
-const wss = new WebSocket.Server({ port: PORT });
+
+// 💡 1. 直接WebSocketを立てるのではなく、一度標準的なHTTPサーバーを作成します
+const server = http.createServer((req, res) => {
+    // Discordプロキシが生存確認（ヘルスチェック）をしてきた時用のレスポンス
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Apex Ban Board Server is Running\n');
+});
+
+// 💡 2. 作成したHTTPサーバーの上にWebSocketサーバーを乗せます
+// これにより、Discordのプロキシ（HTTPSベースの通信）を安全にWebSocketへ変換して受け入れられます
+const wss = new WebSocket.Server({ server: server });
 
 const rooms = {};
 
-// 💡 サーバー全体の稼働状況をきれいに表示する補助関数
+// サーバー全体の稼働状況をきれいに表示する補助関数
 function printServerStatus() {
     console.log("\n====== 📊 現在のサーバー稼働状況 ======");
     const roomIds = Object.keys(rooms);
@@ -13,7 +24,6 @@ function printServerStatus() {
         console.log("稼働中の部屋: なし (メモリは完全にクリーンです)");
     } else {
         roomIds.forEach(id => {
-            // この部屋に現在繋がっている人数をカウント
             let count = 0;
             wss.clients.forEach(client => {
                 if (client.currentRoomId === id && client.readyState === WebSocket.OPEN) {
@@ -51,7 +61,6 @@ wss.on('connection', function connection(ws) {
             console.log(`✨ [部屋作成] 部屋 ${roomId} が新しく作られました。`);
             ws.send(JSON.stringify({ type: "ROOM_CREATED", roomId: roomId, password: password }));
             
-            // 状況を表示
             printServerStatus();
         }
 
@@ -76,7 +85,6 @@ wss.on('connection', function connection(ws) {
                 bannedLegends: rooms[roomId].bannedLegends 
             }));
 
-            // 状況を表示
             printServerStatus();
         }
 
@@ -113,7 +121,6 @@ wss.on('connection', function connection(ws) {
         }
     });
 
-    // 【自動解体・解放のログ】
     ws.on('close', function() {
         const roomId = ws.currentRoomId;
         console.log(`🔴 プレイヤーがブラウザを閉じるか、通信を切断しました。(直前まで部屋 [${roomId || 'なし'}] に滞在)`);
@@ -130,7 +137,6 @@ wss.on('connection', function connection(ws) {
             }
         });
 
-        // 参加者が0人になったらメモリから削除
         if (activeUsersInRoom === 0) {
             delete rooms[roomId];
             console.log(`🚨 【データ破棄】部屋 ${roomId} は誰もいなくなったため、自動でリセット・解体されました。`);
@@ -138,7 +144,6 @@ wss.on('connection', function connection(ws) {
             console.log(`ℹ️ 部屋 ${roomId} にはまだ他のプレイヤー（${activeUsersInRoom}人）が残っているため、部屋は維持されます。`);
         }
 
-        // 最終的な状況を表示
         printServerStatus();
     });
 });
@@ -151,5 +156,8 @@ function broadcastToRoom(roomId, payload) {
     });
 }
 
-console.log(`WebSocketサーバーがポート ${PORT} で起動しました...`);
-printServerStatus();
+// 💡 3. WebSocket単体ではなく、HTTPサーバーを起動（Listen）させます
+server.listen(PORT, () => {
+    console.log(`WebSocket/HTTP サーバーがポート ${PORT} で起動しました...`);
+    printServerStatus();
+});
