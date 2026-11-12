@@ -33,9 +33,13 @@ wss.on('connection', function connection(ws) {
     ws.on('message', function incoming(message) {
         const data = JSON.parse(message);
 
-        // 💡 【追加】生存信号（PING）を受け取ったら、何もせず処理を終了する（エラーにしないため）
-        if (data.type === "PING") return;
-
+        if (data.type === "PING") {
+            const now = new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo' });
+            console.log(`💓 [${now}] PING受信 (部屋: ${ws.currentRoomId || '未入室'} | クライアント送信時刻: ${data.sentAt})`);
+            ws.send(JSON.stringify({ type: "PONG", sentAt: data.sentAt }));
+            return;
+        }
+        
         // 【機能1】新しい部屋を作る
         if (data.type === "CREATE_ROOM") {
             let roomId;
